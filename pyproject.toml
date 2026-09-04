@@ -1,0 +1,26 @@
+[project]
+name = "ssh-agent"
+version = "0.1.0"
+description = "AI SSH terminal agent with tool-calling and a safety policy engine"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "openai>=1.50",
+    "paramiko>=3.4",
+    "python-dotenv>=1.0",
+    "rich>=15.0.0",
+]
+
+[project.optional-dependencies]
+gui = ["PyQt5>=5.15"]
+dev = ["pytest>=8.0"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.uv]
+required-environments = [
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
