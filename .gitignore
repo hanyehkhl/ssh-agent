@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Session transcripts written at runtime by ssh-agent.
+session_log.jsonl
+*.jsonl

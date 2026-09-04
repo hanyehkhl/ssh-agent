@@ -48,6 +48,37 @@ def build_client() -> OpenAI:
     return OpenAI(**kwargs)
 
 
+def _assistant_entry(message) -> dict:
+    """Turn the model's reply into a message to append to the history.
+
+    The reply is echoed back verbatim rather than rebuilt field by field.
+    Some providers attach their own data to a tool call and reject the next
+    request if it does not come back — Gemini's OpenAI-compatible endpoint
+    returns a `thought_signature` inside each tool call and answers HTTP 400
+    ("Function call is missing a thought_signature") when a hand-rebuilt
+    message drops it.
+    """
+    if hasattr(message, "model_dump"):
+        entry = message.model_dump(exclude_none=True)
+        entry["role"] = "assistant"
+        if not entry.get("tool_calls") and entry.get("content") is None:
+            entry["content"] = ""
+        return entry
+
+    # Fallback for test doubles and any client that is not a pydantic model.
+    entry = {"role": "assistant", "content": message.content or ""}
+    if message.tool_calls:
+        entry["tool_calls"] = [
+            {
+                "id": tc.id,
+                "type": "function",
+                "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+            }
+            for tc in message.tool_calls
+        ]
+    return entry
+
+
 class Agent:
     def __init__(
         self,
@@ -131,20 +162,7 @@ class Agent:
                 metrics.output_tokens += getattr(usage, "completion_tokens", 0) or 0
 
             message = response.choices[0].message
-            entry = {"role": "assistant", "content": message.content or ""}
-            if message.tool_calls:
-                entry["tool_calls"] = [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
-                        },
-                    }
-                    for tc in message.tool_calls
-                ]
-            self.messages.append(entry)
+            self.messages.append(_assistant_entry(message))
 
             if not message.tool_calls:
                 final_text = (message.content or "").strip()

@@ -36,12 +36,19 @@ class SSHSession:
             key_filename=key_filename,
             timeout=timeout,
         )
-        self.shell = self.client.invoke_shell()
+        # A wide pty stops the shell from hard-wrapping long command lines.
+        # Wrapping used to split the completion marker across two lines, so
+        # the echo cleanup below no longer recognised it and the echoed
+        # command leaked into the captured output.
+        self.shell = self.client.invoke_shell(width=1000, height=100)
         self.shell.settimeout(timeout)
         self._drain(initial=True)
         # Disable bash's bracketed-paste mode so it stops wrapping the
-        # prompt in ESC[?2004h / ESC[?2004l on every command.
+        # prompt in ESC[?2004h / ESC[?2004l on every command, and turn off
+        # terminal echo so the command is not read back as part of its own
+        # output in the first place.
         self.shell.send("bind 'set enable-bracketed-paste off' 2>/dev/null\n")
+        self.shell.send("stty -echo 2>/dev/null\n")
         self._drain(read_timeout=0.5)
 
     def _drain(self, initial: bool = False, read_timeout: float = 2.0) -> str:

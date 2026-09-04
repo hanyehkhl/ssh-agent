@@ -211,3 +211,50 @@ def test_tool_call_count_matches_the_model_not_the_shell_commands():
     # system_facts is one tool call even though it shells out five times.
     client = FakeClient([_message(tool_calls=[("system_facts", {})]), _message(content="ok")])
     assert list(make_agent(client).run("q"))[-1].metrics.tool_calls == 1
+
+
+class PydanticishMessage:
+    """Stands in for the SDK's message model, which carries provider extras."""
+
+    def __init__(self, dump):
+        self._dump = dump
+        self.content = dump.get("content")
+        self.tool_calls = None
+
+    def model_dump(self, exclude_none=False):
+        if exclude_none:
+            return {k: v for k, v in self._dump.items() if v is not None}
+        return dict(self._dump)
+
+
+def test_provider_specific_fields_survive_into_the_history():
+    # Gemini attaches a thought_signature to each tool call and rejects the
+    # next request with HTTP 400 if it does not come back. Rebuilding the
+    # assistant message field by field silently dropped it.
+    from agent.loop import _assistant_entry
+
+    signature = {"google": {"thought_signature": "abc123"}}
+    entry = _assistant_entry(PydanticishMessage({
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [{"id": "c1", "type": "function", "extra_content": signature,
+                        "function": {"name": "system_facts", "arguments": "{}"}}],
+    }))
+    assert entry["role"] == "assistant"
+    assert entry["tool_calls"][0]["extra_content"] == signature
+    assert "content" not in entry  # dropped as None, not forced to ""
+
+
+def test_a_plain_reply_still_carries_content():
+    from agent.loop import _assistant_entry
+
+    entry = _assistant_entry(PydanticishMessage({"role": "assistant", "content": "سلام"}))
+    assert entry == {"role": "assistant", "content": "سلام"}
+
+
+def test_a_content_free_reply_without_tool_calls_gets_an_empty_string():
+    from agent.loop import _assistant_entry
+
+    assert _assistant_entry(PydanticishMessage({"role": "assistant", "content": None})) == {
+        "role": "assistant", "content": ""
+    }
